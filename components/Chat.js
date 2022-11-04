@@ -1,12 +1,13 @@
 import React from 'react';
 import { StyleSheet, View, KeyboardAvoidingView } from 'react-native';
 import 'react-native-gesture-handler';
-import { GiftedChat, Bubble } from 'react-native-gifted-chat'
+import { GiftedChat, Bubble, InputToolbar } from 'react-native-gifted-chat'
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import NetInfo from '@react-native-community/netinfo';
 
 // Import functions from SDKs
 const firebase = require('firebase');
 require('firebase/firestore')
-
 
 export default class Chat extends React.Component {
     constructor() {
@@ -18,7 +19,8 @@ export default class Chat extends React.Component {
                 _id: '',
                 avatar: '',
                 name: '',
-            }
+            },
+            isConnected: false,
         };
 
         //Set up Firebase
@@ -62,36 +64,92 @@ export default class Chat extends React.Component {
         });
     };
 
+    //Read & update messages in storage
+    async getMessages() {
+        let messages = '';
+        try {
+            messages = await AsyncStorage.getItem('messages') || [];
+            this.setState({
+                messages: JSON.parse(messages)
+            });
+        } catch (error) {
+            console.log(error.message);
+        }
+    };
+
+    async saveMessages() {
+        try {
+            await AsyncStorage.setItem('messages', JSON.stringify(this.state.messages));
+        } catch (error) {
+            console.log(error.message);
+        }
+    }
+
+    async deleteMessages() {
+        try {
+            await AsyncStorage.removeItem('messages');
+        } catch (error) {
+            console.log(error.message);
+        }
+    }
+
     componentDidMount() {
 
         //Display username in navigation
         let { name } = this.props.route.params;
         this.props.navigation.setOptions({ title: name });
 
-        //Anonymous user authentication 
-        this.referenceChatMessages = firebase.firestore().collection('messages');
+        //If user is online --> authenticate & load messages via Firebase 
 
-        this.authUnsubscribe = firebase.auth().onAuthStateChanged((user) => {
-            if (!user) {
-                firebase.auth().signInAnonymously();
+        NetInfo.fetch().then(connection => {
+            if (connection.isConnected) {
+                this.setState({
+                    isConnected: true,
+                });
+                console.log('online');
+
+                //Anonymous user authentication 
+                this.referenceChatMessages = firebase.firestore().collection('messages');
+
+                this.authUnsubscribe = firebase.auth().onAuthStateChanged((user) => {
+                    if (!user) {
+                        firebase.auth().signInAnonymously();
+                    }
+                    this.setState({
+                        uid: user.uid,
+                        messages: [],
+                        user: {
+                            _id: user.uid,
+                            name: name,
+                        },
+                    });
+                    this.unsubscribe = this.referenceChatMessages
+                        .orderBy('createdAt', 'desc')
+                        .onSnapshot(this.onCollectionUpdate);
+                    this.saveMessages();
+                });
             }
-            this.setState({
-                uid: user.uid,
-                messages: [],
-                user: {
-                    _id: user.uid,
-                    name: name,
-                },
-            });
-            this.unsubscribe = this.referenceChatMessages
-                .orderBy('createdAt', 'desc')
-                .onSnapshot(this.onCollectionUpdate);
-        });
+            // If user is offline, load & display messages from asyncStorage
+            else {
+                this.setState({
+                    isConnected: false,
+                });
+                console.log('offline');
+                this.getMessages();
+            }
+        })
     }
 
-    componentWillUnmount() {
-        this.unsubscribe();
-        this.authUnsubscribe();
+    //Save messages to database
+    addMessages = () => {
+        const message = this.state.messages[0];
+        this.referenceChatMessages.add({
+            uid: this.state.uid,
+            _id: message._id,
+            text: message.text,
+            createdAt: message.createdAt,
+            user: message.user,
+        });
     }
 
     //Appends new message to previous  
@@ -99,19 +157,9 @@ export default class Chat extends React.Component {
         this.setState(previousState => ({
             messages: GiftedChat.append(previousState.messages, messages),
         }), () => {
-            this.addMessages(this.state.messages[0]);
-        });
-    }
-
-    //Save messages to database
-    addMessages = (message) => {
-
-        this.referenceChatMessages.add({
-            uid: this.state.uid,
-            _id: message._id,
-            text: message.text,
-            createdAt: message.createdAt,
-            user: message.user,
+            this.saveMessages();
+            this.addMessages();
+            this.deleteMessages();
         });
     }
 
@@ -125,6 +173,18 @@ export default class Chat extends React.Component {
         )
     }
 
+    //Hides input when offline
+    renderInputToolbar(props) {
+        if (this.state.isConnected == false) {
+        } else {
+            return (
+                <InputToolbar
+                    {...props}
+                />
+            );
+        }
+    }
+
     render() {
         const { color, name } = this.props.route.params;
 
@@ -132,6 +192,7 @@ export default class Chat extends React.Component {
             <View style={[{ backgroundColor: color }, styles.container]}>
                 <GiftedChat
                     renderBubble={this.renderBubble.bind(this)}
+                    renderInputToolbar={this.renderInputToolbar.bind(this)}
                     messages={this.state.messages}
                     onSend={messages => this.onSend(messages)}
                     user={{
@@ -150,15 +211,12 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
     },
-    chatTitle: {
-        color: '#FFFFFF'
-    },
     bubble: {
         left: {
-            backgroundColor: 'white',
+            backgroundColor: '#FFF',
         },
         right: {
-            backgroundColor: 'black'
+            backgroundColor: '#6E85B7'
         }
     }
 })
