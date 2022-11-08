@@ -91,6 +91,7 @@ const styles = StyleSheet.create({
         paddingTop: '6%',
         paddingBottom: '6%',
         alignItems: 'center',
+        borderRadius: '25%'
     },
     input: {
         width: '88%',
@@ -98,7 +99,7 @@ const styles = StyleSheet.create({
         height: 50,
         borderColor: 'gray',
         borderWidth: 2,
-        borderRadius: 2
+        borderRadius: '25%'
     },
     colorWrapper: {
         width: '88%',
@@ -111,6 +112,7 @@ const styles = StyleSheet.create({
     },
     colors: {
         flexDirection: 'row',
+        justifyContent: 'center',
         marginBottom: 1,
     },
     color: {
@@ -146,7 +148,7 @@ const styles = StyleSheet.create({
         backgroundColor: '#757083',
         alignItems: 'center',
         justifyContent: 'center',
-        borderRadius: 2,
+        borderRadius: '25%'
     },
     buttonText: {
         color: '#FFFFFF',

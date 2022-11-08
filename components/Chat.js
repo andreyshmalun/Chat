@@ -2,12 +2,15 @@ import React from 'react';
 import { StyleSheet, View, KeyboardAvoidingView } from 'react-native';
 import 'react-native-gesture-handler';
 import { GiftedChat, Bubble, InputToolbar } from 'react-native-gifted-chat'
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
-
+import CustomActions from './CustomActions';
+import MapView from 'react-native-maps';
+import { getBottomSpace } from 'react-native-iphone-x-helper';
 // Import functions from SDKs
 const firebase = require('firebase');
 require('firebase/firestore')
+
 
 export default class Chat extends React.Component {
     constructor() {
@@ -17,10 +20,12 @@ export default class Chat extends React.Component {
             uid: 0,
             user: {
                 _id: '',
-                avatar: '',
                 name: '',
+                avatar: '',
             },
             isConnected: false,
+            image: null,
+            location: null
         };
 
         //Set up Firebase
@@ -50,13 +55,14 @@ export default class Chat extends React.Component {
             let data = doc.data();
             messages.push({
                 _id: data._id,
-                text: data.text,
+                text: data.text || '',
                 createdAt: data.createdAt.toDate(),
                 user: {
                     _id: data.user._id,
                     name: data.user.name,
-                    avatar: data.user.avatar,
                 },
+                image: data.image || null,
+                location: data.location || null,
             });
         });
         this.setState({
@@ -93,6 +99,7 @@ export default class Chat extends React.Component {
         }
     }
 
+
     componentDidMount() {
 
         //Display username in navigation
@@ -108,8 +115,10 @@ export default class Chat extends React.Component {
                 });
                 console.log('online');
 
+
                 //Anonymous user authentication 
                 this.referenceChatMessages = firebase.firestore().collection('messages');
+
 
                 this.authUnsubscribe = firebase.auth().onAuthStateChanged((user) => {
                     if (!user) {
@@ -121,6 +130,7 @@ export default class Chat extends React.Component {
                         user: {
                             _id: user.uid,
                             name: name,
+                            avatar: 'https://placeimg.com/140/140/any',
                         },
                     });
                     this.unsubscribe = this.referenceChatMessages
@@ -129,7 +139,7 @@ export default class Chat extends React.Component {
                     this.saveMessages();
                 });
             }
-            // If user is offline, load & display messages from asyncStorage
+            // If user is offline --> load & display messages from asyncStorage
             else {
                 this.setState({
                     isConnected: false,
@@ -140,15 +150,25 @@ export default class Chat extends React.Component {
         })
     }
 
+    componentWillUnmount() {
+        if (this.isConnected) {
+            this.unsubscribe();
+            this.authUnsubscribe();
+        }
+    }
+
+
     //Save messages to database
     addMessages = () => {
         const message = this.state.messages[0];
         this.referenceChatMessages.add({
             uid: this.state.uid,
             _id: message._id,
-            text: message.text,
+            text: message.text || '',
             createdAt: message.createdAt,
             user: message.user,
+            image: message.image || null,
+            location: message.location || null,
         });
     }
 
@@ -158,7 +178,7 @@ export default class Chat extends React.Component {
             messages: GiftedChat.append(previousState.messages, messages),
         }), () => {
             this.saveMessages();
-            this.addMessages();
+            this.addMessages(this.state.messages[0]);
             this.deleteMessages();
         });
     }
@@ -185,20 +205,51 @@ export default class Chat extends React.Component {
         }
     }
 
+    renderCustomActions = (props) => {
+        return <CustomActions {...props} />;
+    };
+
+
+    //Returns MapView if message contains location data
+    renderCustomView(props) {
+        const { currentMessage } = props;
+        if (currentMessage.location) {
+            return (
+                <MapView
+                    style={{ width: 150, height: 100, borderRadius: 13, margin: 3 }}
+                    region={{
+                        latitude: currentMessage.location.latitude,
+                        longitude: currentMessage.location.longitude,
+                        latitudeDelta: 0.0922,
+                        longitudeDelta: 0.0421,
+                    }}
+                />
+            );
+        }
+        return null;
+    }
+
+
     render() {
         const { color, name } = this.props.route.params;
 
         return (
             <View style={[{ backgroundColor: color }, styles.container]}>
                 <GiftedChat
+                    bottomOffset={getBottomSpace()}
                     renderBubble={this.renderBubble.bind(this)}
                     renderInputToolbar={this.renderInputToolbar.bind(this)}
                     messages={this.state.messages}
+                    isConnected={this.state.isConnected}
                     onSend={messages => this.onSend(messages)}
                     user={{
                         _id: this.state.user._id,
                         name: name,
+                        avatar: this.state.user.avatar,
                     }}
+                    renderActions={this.renderCustomActions}
+                    renderCustomView={this.renderCustomView}
+
                 />
                 {/*Prevent hidden input field on Android*/}
                 {Platform.OS === 'android' ? <KeyboardAvoidingView behavior="height" /> : null}
@@ -211,12 +262,15 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
     },
+    chatTitle: {
+        color: '#FFFFFF'
+    },
     bubble: {
         left: {
-            backgroundColor: '#FFF',
+            backgroundColor: 'white',
         },
         right: {
-            backgroundColor: '#6E85B7'
+            backgroundColor: 'dodgerblue'
         }
     }
 })
